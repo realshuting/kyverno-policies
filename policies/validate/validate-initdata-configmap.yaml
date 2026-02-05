@@ -1,0 +1,92 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: validate-coco-initdata-configmap
+  annotations:
+    policies.kyverno.io/title: Validate CoCo InitData ConfigMap Structure
+    policies.kyverno.io/category: Confidential Containers
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: ConfigMap
+    policies.kyverno.io/description: >-
+      This policy validates the structure of CoCo initdata ConfigMaps.
+      ConfigMaps with label 'coco.io/type: initdata' must contain
+      the required fields: version, algorithm, policy.rego, aa.toml, and cdh.toml.
+      See https://confidentialcontainers.org/docs/features/initdata/
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: validate-initdata-version
+      match:
+        any:
+          - resources:
+              kinds:
+                - ConfigMap
+              selector:
+                matchLabels:
+                  coco.io/type: initdata
+      validate:
+        message: "InitData ConfigMap must contain 'version' field in data section"
+        pattern:
+          data:
+            version: "?*"
+
+    - name: validate-initdata-algorithm
+      match:
+        any:
+          - resources:
+              kinds:
+                - ConfigMap
+              selector:
+                matchLabels:
+                  coco.io/type: initdata
+      validate:
+        message: "InitData ConfigMap must contain 'algorithm' field with value sha256, sha384, or sha512"
+        pattern:
+          data:
+            algorithm: "sha256 | sha384 | sha512"
+
+    - name: validate-initdata-policy-rego
+      match:
+        any:
+          - resources:
+              kinds:
+                - ConfigMap
+              selector:
+                matchLabels:
+                  coco.io/type: initdata
+      validate:
+        message: "InitData ConfigMap must contain 'policy.rego' field"
+        pattern:
+          data:
+            policy.rego: "?*"
+
+    - name: validate-initdata-aa-toml
+      match:
+        any:
+          - resources:
+              kinds:
+                - ConfigMap
+              selector:
+                matchLabels:
+                  coco.io/type: initdata
+      validate:
+        message: "InitData ConfigMap must contain 'aa.toml' field with KBS configuration"
+        pattern:
+          data:
+            aa.toml: "?*"
+
+    - name: validate-initdata-cdh-toml
+      match:
+        any:
+          - resources:
+              kinds:
+                - ConfigMap
+              selector:
+                matchLabels:
+                  coco.io/type: initdata
+      validate:
+        message: "InitData ConfigMap must contain 'cdh.toml' field with KBC configuration"
+        pattern:
+          data:
+            cdh.toml: "?*"

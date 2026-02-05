@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: test-initdata-invalid
+  labels:
+    coco.io/type: initdata
+data:
+  # Missing version field
+  algorithm: "sha384"
+  # Missing policy.rego, aa.toml, and cdh.toml
