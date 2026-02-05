@@ -1,0 +1,52 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-coco-init-container
+  annotations:
+    policies.kyverno.io/title: Inject CoCo Attestation Init Container
+    policies.kyverno.io/category: Confidential Containers
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy injects an attestation verification init container into pods
+      that have the label 'coco: enabled' and annotation 'coco.io/init-config'.
+      The init container verifies attestation before the main application starts.
+spec:
+  rules:
+    - name: inject-init-container
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              selector:
+                matchLabels:
+                  coco: enabled
+      preconditions:
+        all:
+          - key: "{{ request.object.metadata.annotations.\"coco.io/init-config\" || '' }}"
+            operator: NotEquals
+            value: ""
+      context:
+        - name: initConfig
+          apiCall:
+            urlPath: "/api/v1/namespaces/{{request.namespace}}/configmaps/{{request.object.metadata.annotations.\"coco.io/init-config\"}}"
+            jmesPath: "data"
+      mutate:
+        patchStrategicMerge:
+          spec:
+            initContainers:
+              - name: attestation-init
+                image: "{{ initConfig.init_image || 'ghcr.io/confidential-containers/attestation-init:latest' }}"
+                env:
+                  - name: KBS_URL
+                    value: "{{ initConfig.kbs_url || '' }}"
+                  - name: ATTESTATION_TIMEOUT
+                    value: "{{ initConfig.timeout || '60' }}"
+                resources:
+                  limits:
+                    memory: "64Mi"
+                    cpu: "50m"
+                  requests:
+                    memory: "32Mi"
+                    cpu: "25m"

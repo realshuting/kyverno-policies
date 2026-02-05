@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coco-init-config
+  annotations:
+    description: |
+      Configuration for CoCo attestation init container.
+      The init container verifies attestation with the KBS
+      before the main application containers start.
+data:
+  init_image: "ghcr.io/confidential-containers/attestation-init:latest"
+  kbs_url: "https://kbs.example.com:8080"
+  timeout: "60"

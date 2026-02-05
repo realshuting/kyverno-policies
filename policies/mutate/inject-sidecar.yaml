@@ -1,0 +1,60 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: inject-coco-sidecar
+  annotations:
+    policies.kyverno.io/title: Inject CoCo Secure Sidecar
+    policies.kyverno.io/category: Confidential Containers
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      This policy injects a secure mTLS sidecar container into pods that have
+      the label 'coco: enabled' and annotation 'coco.io/sidecar-config'.
+      The sidecar provides attestation status API, TEE environment info,
+      and optional reverse proxy with certificates retrieved from KBS.
+      Based on https://github.com/confidential-devhub/cococtl/blob/main/sidecar/README.md
+spec:
+  rules:
+    - name: inject-sidecar
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              selector:
+                matchLabels:
+                  coco: enabled
+      preconditions:
+        all:
+          - key: "{{ request.object.metadata.annotations.\"coco.io/sidecar-config\" || '' }}"
+            operator: NotEquals
+            value: ""
+      context:
+        - name: sidecarConfig
+          apiCall:
+            urlPath: "/api/v1/namespaces/{{request.namespace}}/configmaps/{{request.object.metadata.annotations.\"coco.io/sidecar-config\"}}"
+            jmesPath: "data"
+      mutate:
+        patchStrategicMerge:
+          spec:
+            containers:
+              - name: coco-sidecar
+                image: "{{ sidecarConfig.sidecar_image || 'ghcr.io/confidential-containers/secure-sidecar:latest' }}"
+                ports:
+                  - containerPort: "{{ sidecarConfig.https_port || '8443' | to_number(@) }}"
+                    name: https
+                    protocol: TCP
+                env:
+                  - name: TLS_CERT_URI
+                    value: "{{ sidecarConfig.tls_cert_uri || '' }}"
+                  - name: HTTPS_PORT
+                    value: "{{ sidecarConfig.https_port || '8443' }}"
+                  - name: FORWARD_PORT
+                    value: "{{ sidecarConfig.forward_port || '8080' }}"
+                resources:
+                  limits:
+                    memory: "128Mi"
+                    cpu: "100m"
+                  requests:
+                    memory: "64Mi"
+                    cpu: "50m"

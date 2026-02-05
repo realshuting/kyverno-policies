@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coco-sidecar-config
+  annotations:
+    description: |
+      Configuration for CoCo secure sidecar injection.
+      The sidecar provides:
+      - Attestation status API endpoint (HTTPS with mTLS)
+      - TEE environment information
+      - Optional reverse proxy for application traffic
+      - Certificates retrieved from KBS during attestation
+data:
+  sidecar_image: "ghcr.io/confidential-containers/secure-sidecar:latest"
+  tls_cert_uri: "kbs:///default/sidecar-tls/app/cert.pem"
+  https_port: "8443"
+  forward_port: "8080"
