@@ -15,9 +15,22 @@ spec:
           kind: MutatingPolicy
           metadata:
             name: inject-coco-initdata
+          status:
+            conditionStatus:
+              (conditions[?type == 'WebhookConfigured']):
+              - message: Webhook configured.
+                reason: Succeeded
+                status: "True"
+                type: WebhookConfigured
+              (conditions[?type == 'RBACPermissionsGranted']):
+              - message: Policy is ready for reporting.
+                reason: Succeeded
+                status: "True"
+                type: RBACPermissionsGranted
+              (length(conditions)): 2
+              ready: true
         timeout: 10s
-    - sleep:
-        duration: 3s
+
   - name: step-02
     try:
     - apply:

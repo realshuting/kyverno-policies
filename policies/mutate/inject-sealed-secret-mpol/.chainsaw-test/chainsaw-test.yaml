@@ -19,8 +19,20 @@ spec:
           kind: MutatingPolicy
           metadata:
             name: inject-sealed-secret-config
-    - sleep:
-        duration: 10s
+          status:
+            conditionStatus:
+              (conditions[?type == 'WebhookConfigured']):
+              - message: Webhook configured.
+                reason: Succeeded
+                status: "True"
+                type: WebhookConfigured
+              (conditions[?type == 'RBACPermissionsGranted']):
+              - message: Policy is ready for reporting.
+                reason: Succeeded
+                status: "True"
+                type: RBACPermissionsGranted
+              (length(conditions)): 2
+              ready: true
   - name: step-02-create-configmap
     try:
     - apply:
