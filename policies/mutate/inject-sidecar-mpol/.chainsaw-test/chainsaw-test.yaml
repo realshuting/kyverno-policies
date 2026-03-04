@@ -1,0 +1,89 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: inject-coco-mtls-sidecar
+spec:
+  template: false
+  steps:
+  - name: step-01
+    try:
+    - apply:
+        file: ../inject-coco-sidecar.yaml
+    - assert:
+        resource:
+          apiVersion: policies.kyverno.io/v1
+          kind: MutatingPolicy
+          metadata:
+            name: inject-coco-sidecar
+        timeout: 10s
+    - sleep:
+        duration: 3s
+  - name: step-02
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: coco-sidecar-config
+            namespace: default
+          data:
+            sidecar_image: "ghcr.io/confidential-containers/secure-sidecar:latest"
+            https_port: "8443"
+            forward_port: "8080"
+            tls_cert_uri: ""
+    - sleep:
+        duration: 2s
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-sidecar-pod
+            namespace: default
+            labels:
+              coco: enabled
+            annotations:
+              coco.io/sidecar-config: coco-sidecar-config
+          spec:
+            containers:
+            - name: hello
+              image: busybox:latest
+    - sleep:
+        duration: 3s
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-sidecar-pod
+            namespace: default
+          spec:
+            (containers[?name=='coco-sidecar'] | length(@) == `1`): true
+            (containers[?name=='coco-sidecar'].image | [0] == 'ghcr.io/confidential-containers/secure-sidecar:latest'): true
+            (length(containers) == `2`): true
+        timeout: 60s
+  - name: step-03
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-pod-no-label
+            namespace: default
+          spec:
+            containers:
+            - name: main
+              image: nginx:1.20
+    - error:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-pod-no-label
+            namespace: default
+          spec:
+            containers:
+            - name: coco-sidecar
+        timeout: 10s

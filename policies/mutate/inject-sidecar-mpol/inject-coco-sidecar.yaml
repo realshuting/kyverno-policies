@@ -1,0 +1,42 @@
+apiVersion: policies.kyverno.io/v1
+kind: MutatingPolicy
+metadata:
+  name: inject-coco-sidecar
+spec:
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [""]
+      apiVersions: ["v1"]
+      operations: ["CREATE"]
+      resources: ["pods"]
+  matchConditions:
+  - name: has-coco-label
+    expression: "has(object.metadata.labels) && object.metadata.labels['coco'] == 'enabled'"
+  - name: has-sidecar-config-annotation
+    expression: "has(object.metadata.annotations) && 'coco.io/sidecar-config' in object.metadata.annotations"
+  variables:
+  - name: configMapName
+    expression: "object.metadata.annotations['coco.io/sidecar-config']"
+  - name: namespace
+    expression: "has(object.metadata.namespace) && object.metadata.namespace != '' ? object.metadata.namespace : 'default'"
+  - name: configMapData
+    expression: "resource.Get('v1', 'configmaps', variables.namespace, variables.configMapName).data"
+  - name: image
+    expression: "'sidecar_image' in variables.configMapData ? variables.configMapData['sidecar_image'] : 'ghcr.io/confidential-containers/secure-sidecar:latest'"
+  mutations:
+  - patchType: ApplyConfiguration
+    applyConfiguration:
+      expression: |
+        Object{
+          spec: Object.spec{
+            containers: (has(object.spec.containers) ? object.spec.containers : []) + [
+              Object.spec.containers{
+                name: "coco-sidecar",
+                image: variables.image
+              }
+            ]
+          }
+        }
+
+
+        
