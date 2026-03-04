@@ -1,24 +1,37 @@
 apiVersion: chainsaw.kyverno.io/v1alpha1
 kind: Test
 metadata:
-  name: inject-coco-mtls-sidecar
+  name: inject-coco-mtls-sidecar-complete
 spec:
   template: false
   steps:
-  - name: step-01
+  - name: step-01-install-policy
     try:
     - apply:
-        file: ../inject-coco-sidecar.yaml
+        file: ../inject-coco-mtls-sidecar.yaml
     - assert:
         resource:
           apiVersion: policies.kyverno.io/v1
           kind: MutatingPolicy
           metadata:
-            name: inject-coco-sidecar
+            name: inject-coco-mtls-sidecar
+          status:
+            conditionStatus:
+              (conditions[?type == 'WebhookConfigured']):
+              - message: Webhook configured.
+                reason: Succeeded
+                status: "True"
+                type: WebhookConfigured
+              (conditions[?type == 'RBACPermissionsGranted']):
+              - message: Policy is ready for reporting.
+                reason: Succeeded
+                status: "True"
+                type: RBACPermissionsGranted
+              (length(conditions)): 2
+              ready: true
         timeout: 10s
-    - sleep:
-        duration: 3s
-  - name: step-02
+  
+  - name: step-02-test-complete-sidecar-injection
     try:
     - apply:
         resource:
@@ -28,18 +41,16 @@ spec:
             name: coco-sidecar-config
             namespace: default
           data:
-            sidecar_image: "ghcr.io/confidential-containers/secure-sidecar:latest"
-            https_port: "8443"
-            forward_port: "8080"
-            tls_cert_uri: ""
-    - sleep:
-        duration: 2s
+            sidecar_image: "ghcr.io/confidential-containers/secure-sidecar:v1.0"
+            https_port: "9443"
+            forward_port: "9080"
+            tls_cert_uri: "https://kbs.example.com/certs/tls.crt"
     - apply:
         resource:
           apiVersion: v1
           kind: Pod
           metadata:
-            name: test-sidecar-pod
+            name: test-complete-sidecar-pod
             namespace: default
             labels:
               coco: enabled
@@ -47,23 +58,50 @@ spec:
               coco.io/sidecar-config: coco-sidecar-config
           spec:
             containers:
-            - name: hello
-              image: busybox:latest
+            - name: main-app
+              image: nginx:1.20
     - sleep:
-        duration: 3s
+        duration: 2s
     - assert:
+        file: expected-pod-complete-sidecar.yaml
+        timeout: 30s
+
+  - name: step-03-test-default-values
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: coco-default-config
+            namespace: default
+          data:
+            sidecar_image: "custom-registry/secure-sidecar:latest"
+            # Only provide image, test defaults for other values
+    - sleep:
+        duration: 2s
+    - apply:
         resource:
           apiVersion: v1
           kind: Pod
           metadata:
-            name: test-sidecar-pod
+            name: test-default-values-pod
             namespace: default
+            labels:
+              coco: enabled
+            annotations:
+              coco.io/sidecar-config: coco-default-config
           spec:
-            (containers[?name=='coco-sidecar'] | length(@) == `1`): true
-            (containers[?name=='coco-sidecar'].image | [0] == 'ghcr.io/confidential-containers/secure-sidecar:latest'): true
-            (length(containers) == `2`): true
-        timeout: 60s
-  - name: step-03
+            containers:
+            - name: main-app
+              image: busybox:latest
+    - sleep:
+        duration: 2s
+    - assert:
+        file: expected-pod-default-values.yaml
+        timeout: 30s
+
+  - name: step-04-test-no-label
     try:
     - apply:
         resource:
@@ -72,11 +110,15 @@ spec:
           metadata:
             name: test-pod-no-label
             namespace: default
+            annotations:
+              coco.io/sidecar-config: coco-sidecar-config
           spec:
             containers:
             - name: main
               image: nginx:1.20
-    - error:
+    - sleep:
+        duration: 2s
+    - assert:
         resource:
           apiVersion: v1
           kind: Pod
@@ -84,6 +126,61 @@ spec:
             name: test-pod-no-label
             namespace: default
           spec:
+            # Should NOT have sidecar container
+            (containers[?name=='coco-sidecar'] | length(@) == `0`): true
+            # Should only have the original container
+            (length(containers) == `1`): true
+        timeout: 30s
+
+  - name: step-05-test-no-annotation
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-pod-no-annotation
+            namespace: default
+            labels:
+              coco: enabled
+          spec:
             containers:
-            - name: coco-sidecar
-        timeout: 10s
+            - name: main
+              image: nginx:1.20
+    - sleep:
+        duration: 2s
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-pod-no-annotation
+            namespace: default
+          spec:
+            # Should NOT have sidecar container
+            (containers[?name=='coco-sidecar'] | length(@) == `0`): true
+            # Should only have the original container
+            (length(containers) == `1`): true
+        timeout: 30s
+
+  - name: step-06-test-invalid-configmap
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: test-pod-invalid-configmap
+            namespace: default
+            labels:
+              coco: enabled
+            annotations:
+              coco.io/sidecar-config: nonexistent-configmap
+          spec:
+            containers:
+            - name: main
+              image: nginx:1.20
+        expect:
+        - check:
+            ($error != null): true
+        timeout: 30s
