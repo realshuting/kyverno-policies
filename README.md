@@ -2,6 +2,16 @@
 
 This repository contains Kyverno policies for managing Confidential Containers workloads on Kubernetes/OpenShift clusters.
 
+## Demo
+
+![demo](demo.gif)
+
+The demo covers:
+- RuntimeClass injection (`kata-qemu-coco-dev`)
+- InitData injection from ConfigMap into pod annotation
+- InitData ConfigMap validation (rejects missing fields and invalid algorithms)
+- Sealed secret injection (secretKeyRef + volume mount)
+
 ## Prerequisites
 
 - Kubernetes/OpenShift cluster with Kata Containers runtime configured
