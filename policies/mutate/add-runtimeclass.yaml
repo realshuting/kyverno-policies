@@ -9,7 +9,7 @@ metadata:
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/description: >-
       This policy mutates pods that have the label 'coco: enabled' to add
-      the runtimeClassName 'kata-cc' for running workloads in confidential
+      the runtimeClassName 'kata-qemu-coco-dev' for running workloads in confidential
       containers using Kata Containers.
 spec:
   rules:
@@ -25,4 +25,4 @@ spec:
       mutate:
         patchStrategicMerge:
           spec:
-            runtimeClassName: kata-cc
+            runtimeClassName: kata-qemu-coco-dev

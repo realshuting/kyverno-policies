@@ -14,23 +14,39 @@ spec:
     env:
     - name: EXISTING_VAR
       value: "existing-value"
-    - name: COCO_SECRET_RESOURCE
-      value: "kbs://default/my-secret"
-    - name: COCO_SECRET_TARGET_PATH
-      value: "/etc/secrets/my-secret"
+    - name: PROTECTED_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: sealed-secret
+          key: secret
+    volumeMounts:
+    - name: sealed-secret-volume
+      mountPath: /sealed/myvalue
   - name: sidecar
     image: busybox:1.35
     env:
-    - name: COCO_SECRET_RESOURCE
-      value: "kbs://default/my-secret"
-    - name: COCO_SECRET_TARGET_PATH
-      value: "/etc/secrets/my-secret"
+    - name: PROTECTED_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: sealed-secret
+          key: secret
+    volumeMounts:
+    - name: sealed-secret-volume
+      mountPath: /sealed/myvalue
   initContainers:
   - name: init
     image: busybox:1.35
     command: ["sh", "-c", "echo init"]
     env:
-    - name: COCO_SECRET_RESOURCE
-      value: "kbs://default/my-secret"
-    - name: COCO_SECRET_TARGET_PATH
-      value: "/etc/secrets/my-secret"
+    - name: PROTECTED_SECRET
+      valueFrom:
+        secretKeyRef:
+          name: sealed-secret
+          key: secret
+    volumeMounts:
+    - name: sealed-secret-volume
+      mountPath: /sealed/myvalue
+  volumes:
+  - name: sealed-secret-volume
+    secret:
+      secretName: sealed-secret

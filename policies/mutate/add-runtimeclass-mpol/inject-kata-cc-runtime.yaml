@@ -3,7 +3,7 @@ kind: MutatingPolicy
 metadata:
   annotations:
     policies.kyverno.io/category: Confidential Computing
-    policies.kyverno.io/description: "Automatically injects the runtimeClassName kata-cc to pods that have the label coco=enabled for running workloads in confidential containers using Kata Containers. Pods without the coco=enabled label are not modified."
+    policies.kyverno.io/description: "Automatically injects the runtimeClassName kata-qemu-coco-dev to pods that have the label coco=enabled for running workloads in confidential containers using Kata Containers. Pods without the coco=enabled label are not modified."
     policies.kyverno.io/severity: medium
     policies.kyverno.io/subject: Pod
     policies.kyverno.io/title: Inject Kata Containers Runtime for Confidential Computing
@@ -37,7 +37,7 @@ spec:
       expression: |
         Object{
           spec: Object.spec{
-            runtimeClassName: "kata-cc"
+            runtimeClassName: "kata-qemu-coco-dev"
           }
         }
     patchType: ApplyConfiguration
