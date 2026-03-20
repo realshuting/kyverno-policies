@@ -4,5 +4,8 @@ metadata:
   name: sealed-secret-config
   namespace: default
 data:
-  secret_resource: "kbs://default/my-secret"
-  target_path: "/etc/secrets/my-secret"
+  env_name: PROTECTED_SECRET
+  secret_name: sealed-secret
+  secret_key: secret
+  volume_name: sealed-secret-volume
+  mount_path: /sealed/myvalue

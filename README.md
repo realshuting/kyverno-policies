@@ -2,6 +2,16 @@
 
 This repository contains Kyverno policies for managing Confidential Containers workloads on Kubernetes/OpenShift clusters.
 
+## Demo
+
+![demo](demo.gif)
+
+The demo covers:
+- RuntimeClass injection (`kata-qemu-coco-dev`)
+- InitData injection from ConfigMap into pod annotation
+- InitData ConfigMap validation (rejects missing fields and invalid algorithms)
+- Sealed secret injection (secretKeyRef + volume mount)
+
 ## Prerequisites
 
 - Kubernetes/OpenShift cluster with Kata Containers runtime configured
@@ -19,11 +29,11 @@ kubectl create -f https://github.com/kyverno/kyverno/releases/download/v1.16.2/i
 
 | Policy | File | Description |
 |--------|------|-------------|
-| Add RuntimeClass | `policies/mutate/add-runtimeclass.yaml` | Automatically adds `runtimeClassName: kata-cc` to pods with label `coco: enabled` |
+| Add RuntimeClass | `policies/mutate/add-runtimeclass.yaml` | Automatically adds `runtimeClassName: kata-qemu-coco-dev` to pods with label `coco: enabled` |
 | Inject InitData | `policies/mutate/inject-initdata.yaml` | Injects CoCo initdata annotation from a ConfigMap |
 | Inject Sidecar | `policies/mutate/inject-sidecar.yaml` | Injects secure mTLS sidecar for attestation API |
 | Inject Init Container | `policies/mutate/inject-init-container.yaml` | Injects attestation verification init container |
-| Inject Sealed Secret | `policies/mutate/inject-sealed-secret.yaml` | Injects sealed secret configuration for KBS |
+| Inject Sealed Secret | `policies/mutate/inject-sealed-secret.yaml` | Injects sealed secret references (secretKeyRef + volume mount) for KBS |
 
 ### Validation Policies
 
@@ -35,7 +45,7 @@ kubectl create -f https://github.com/kyverno/kyverno/releases/download/v1.16.2/i
 
 ### 1. Runtime Class Assignment
 
-Add the label `coco: enabled` to your pods to automatically assign the `kata-cc` runtime class:
+Add the label `coco: enabled` to your pods to automatically assign the `kata-qemu-coco-dev` runtime class:
 
 ```yaml
 apiVersion: v1
@@ -129,7 +139,28 @@ metadata:
 
 ### 5. Sealed Secrets Injection
 
-1. Create a sealed secret configuration ConfigMap:
+The sealed secret flow:
+1. Create a JSON envelope: `{"version":"0.1.0","type":"vault","name":"kbs:///default/mysecret/secret","provider":"kbs","provider_settings":{},"annotations":{}}`
+2. Encode as: `sealed.<header>.<base64url(json)>.<signature>`
+3. Store as a regular K8s Secret
+4. Pod references it via secretKeyRef env vars and volume mounts (injected by this policy)
+5. Kata agent unwraps the sealed secret inside TEE via KBS
+
+Steps:
+
+1. Create the sealed secret (K8s Secret with sealed value):
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sealed-secret
+type: Opaque
+stringData:
+  secret: "sealed.<header>.<base64url(json)>.<signature>"
+```
+
+2. Create a ConfigMap that tells the policy how to inject the secret:
 
 ```yaml
 apiVersion: v1
@@ -137,14 +168,19 @@ kind: ConfigMap
 metadata:
   name: my-secret-config
 data:
-  secret_resource: "kbs:///myns/secret"
-  target_path: "/secret/user"
+  env_name: PROTECTED_SECRET
+  secret_name: sealed-secret
+  secret_key: secret
+  volume_name: sealed-secret-volume
+  mount_path: /sealed/myvalue
 ```
 
-2. Reference it in your pod:
+3. Reference it in your pod:
 
 ```yaml
 metadata:
+  labels:
+    coco: enabled
   annotations:
     coco.io/sealed-secret-config: my-secret-config
 ```
