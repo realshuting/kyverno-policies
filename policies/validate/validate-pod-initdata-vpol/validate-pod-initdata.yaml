@@ -1,0 +1,117 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  annotations:
+    policies.kyverno.io/category: Security
+    policies.kyverno.io/description: >-
+      Validates that pods with the 'coco=enabled' label and the
+      'io.katacontainers.config.hypervisor.cc_init_data' annotation contain
+      well-formed initdata. The annotation value is gzip+base64 encoded TOML;
+      this policy decompresses it using the gzip.decompress CEL extension
+      (Kyverno >= 1.18) and checks for required fields.
+      policy.rego is always required. aa.toml and cdh.toml are optional but
+      must appear together; when present, all three url fields must be identical
+      and start with http:// or https://.
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/title: Validate CoCo Pod InitData Annotation
+  name: validate-pod-initdata
+spec:
+  matchConditions:
+  - expression: >-
+      has(object.metadata.labels) &&
+      'coco' in object.metadata.labels &&
+      object.metadata.labels['coco'] == 'enabled'
+    name: has-coco-label
+  - expression: >-
+      has(object.metadata.annotations) &&
+      'io.katacontainers.config.hypervisor.cc_init_data' in object.metadata.annotations &&
+      object.metadata.annotations['io.katacontainers.config.hypervisor.cc_init_data'] != ''
+    name: has-initdata-annotation
+  matchConstraints:
+    resourceRules:
+    - apiGroups:
+      - ""
+      apiVersions:
+      - v1
+      operations:
+      - CREATE
+      - UPDATE
+      resources:
+      - pods
+  validationActions:
+  - Deny
+  validations:
+  # --- Always required ---
+  - expression: "variables.toml.contains('version =')"
+    message: "initdata must contain a 'version' field"
+  - expression: >-
+      variables.toml.contains('algorithm = "sha256"') ||
+      variables.toml.contains('algorithm = "sha384"') ||
+      variables.toml.contains('algorithm = "sha512"')
+    message: "initdata algorithm must be sha256, sha384, or sha512"
+  - expression: "variables.toml.contains('[data]')"
+    message: "initdata must contain a [data] section"
+  - expression: "variables.toml.contains('\"policy.rego\"')"
+    message: "initdata [data] section must contain a 'policy.rego' entry"
+  # --- aa.toml and cdh.toml must both be present or both absent ---
+  - expression: >-
+      !variables.toml.contains('"aa.toml"') ||
+      variables.toml.contains('"cdh.toml"')
+    message: "initdata contains 'aa.toml' but 'cdh.toml' is missing; both must be present together"
+  - expression: >-
+      !variables.toml.contains('"cdh.toml"') ||
+      variables.toml.contains('"aa.toml"')
+    message: "initdata contains 'cdh.toml' but 'aa.toml' is missing; both must be present together"
+  # --- aa.toml structure ---
+  - expression: >-
+      !variables.toml.contains('"aa.toml"') ||
+      variables.toml.contains('[token_configs]')
+    message: "aa.toml must contain a [token_configs] section"
+  - expression: >-
+      !variables.toml.contains('"aa.toml"') ||
+      variables.toml.contains('[token_configs.coco_as]')
+    message: "aa.toml must contain a [token_configs.coco_as] section"
+  - expression: >-
+      !variables.toml.contains('"aa.toml"') ||
+      variables.toml.contains('[token_configs.kbs]')
+    message: "aa.toml must contain a [token_configs.kbs] section"
+  # --- aa.toml URL must be http/https ---
+  - expression: >-
+      !variables.toml.contains('"aa.toml"') ||
+      variables.kbsUrl.startsWith('http://') ||
+      variables.kbsUrl.startsWith('https://')
+    message: "aa.toml [token_configs.coco_as] url must start with http:// or https://"
+  # --- All three url values must be identical ---
+  # kbsUrl is extracted from the first 'url = "' in the document (coco_as).
+  # Splitting on 'url = "X"' gives (occurrences+1) parts; we need >= 4 (3 occurrences:
+  # coco_as, kbs, and cdh.toml [kbc]).
+  - expression: >-
+      !variables.toml.contains('"aa.toml"') ||
+      variables.toml.split('url = "' + variables.kbsUrl + '"').size() >= 4
+    messageExpression: >-
+      'aa.toml [token_configs.coco_as], [token_configs.kbs] and cdh.toml [kbc] must all use the same url (got: "' +
+      variables.kbsUrl + '")'
+  # --- cdh.toml structure ---
+  - expression: >-
+      !variables.toml.contains('"cdh.toml"') ||
+      variables.toml.contains('socket =')
+    message: "cdh.toml must contain a 'socket' field"
+  - expression: >-
+      !variables.toml.contains('"cdh.toml"') ||
+      variables.toml.contains('[kbc]')
+    message: "cdh.toml must contain a [kbc] section"
+  - expression: >-
+      !variables.toml.contains('"cdh.toml"') ||
+      variables.toml.contains('name =')
+    message: "cdh.toml [kbc] section must contain a 'name' field"
+  variables:
+  - expression: >-
+      gzip.decompress(base64.decode(
+        object.metadata.annotations['io.katacontainers.config.hypervisor.cc_init_data']
+      ))
+    name: toml
+  - expression: >-
+      variables.toml.split('url = "').size() > 1 ?
+        variables.toml.split('url = "')[1].split('"')[0] : ''
+    name: kbsUrl

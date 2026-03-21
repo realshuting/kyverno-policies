@@ -1,0 +1,179 @@
+apiVersion: chainsaw.kyverno.io/v1alpha1
+kind: Test
+metadata:
+  name: test-validate-pod-initdata
+spec:
+  template: false
+  steps:
+  - name: step-01-apply-policy
+    try:
+    - apply:
+        file: ../validate-pod-initdata.yaml
+    - assert:
+        resource:
+          apiVersion: policies.kyverno.io/v1
+          kind: ValidatingPolicy
+          metadata:
+            name: validate-pod-initdata
+          status:
+            conditionStatus:
+              (conditions[?type == 'WebhookConfigured']):
+              - message: Webhook configured.
+                reason: Succeeded
+                status: "True"
+                type: WebhookConfigured
+              ready: true
+        timeout: 30s
+
+  - name: step-02-policy-only-initdata-allowed
+    # initdata with only policy.rego in [data] is valid (aa.toml/cdh.toml are optional)
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            annotations:
+              io.katacontainers.config.hypervisor.cc_init_data: H4sIAAAAAAAAAyXKMQ6DMAyF4d2niLxkiygSbD1JVVUWmBDhYhQcELdvUIe3/O8jiZqTzV/3dLjP1HY9wsF5T7reqQmP0CDAaySjN+CmkoYrZI6K9ffew0bDQpFd3WqfP4CRJypijkT0rNByYbj1D4b3IdRxAAAA
+            labels:
+              coco: enabled
+            name: pod-policy-only
+            namespace: default
+          spec:
+            containers:
+            - image: nginx:1.21.0
+              name: nginx
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: pod-policy-only
+            namespace: default
+        timeout: 30s
+
+  - name: step-03-full-initdata-allowed
+    # initdata with policy.rego + valid aa.toml + cdh.toml is valid
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            annotations:
+              io.katacontainers.config.hypervisor.cc_init_data: H4sIAAAAAAAAA42Qz27DIAyH736KiEtOg6TStqrSnqSKIpfQBEFwRMz+vP1Mqx26yybEwfbvsz7AOFP2vKzNW6P2BQ/PLwreXd49pdrqdK87BXCekHEAtVH09ktnN5OSedu2sKENOLtGbuLxHoDJXbFEbjBG+pAg5+KgpkEhaqY1/uBnpuDSaCld/bwP8KuhLVkaUQYlx2q0MG8nY/rDq+7k9Kdjd7wZPmLh8idy17HT8uCzkw2OK1aS/xTM5JLMbe0kD/QYn6Rg9El+yVS6ElUgXOwACVdXYWtHqdU/FL4BtJzgwYMBAAA=
+            labels:
+              coco: enabled
+            name: pod-full-initdata
+            namespace: default
+          spec:
+            containers:
+            - image: nginx:1.21.0
+              name: nginx
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: pod-full-initdata
+            namespace: default
+        timeout: 30s
+
+  - name: step-04-aa-toml-without-cdh-toml-denied
+    # aa.toml present but cdh.toml missing : denied
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            annotations:
+              io.katacontainers.config.hypervisor.cc_init_data: H4sIAAAAAAAAA12OwQqDMAyG73mK0ou3WoVtIuxJRCTTWovVSBs39vZrGbuMkMv3fwk/ekvB8bKJu5BxwfpylfA0ITraM9KqUloCdBMy9iAP8m58q2AsyZQXRQEHjitaI9LuPHwFmMyMp2eB3tMriRxOA9kGiaiYNv8775hWsw8j7bOzsYc/oNZHgmfwuc3CfMS2LKv6pnSaqm10k+rlPx8/VI+jygAAAA==
+            labels:
+              coco: enabled
+            name: pod-aa-only
+            namespace: default
+          spec:
+            containers:
+            - image: nginx:1.21.0
+              name: nginx
+      catch:
+      - description: Pod denied because cdh.toml is missing
+        podLogs:
+          name: pod-aa-only
+          namespace: default
+
+  - name: step-05-aa-toml-missing-coco-as-denied
+    # aa.toml present but missing [token_configs.coco_as] : denied
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            annotations:
+              io.katacontainers.config.hypervisor.cc_init_data: H4sIAAAAAAAAA12PwWrDMBBE7/sVRhefKtuBtiGQLwnGbGTFFpK1Rlq16d931VBIi9BhZ+cNsxgWSo7XrTk3Kq94eH1T8GFTdhSr1OtB9wrgMiPjCGqn4MyXTnYhJfu2bWFH43GxjfzI08MAs71hCdxgCPQpRk7FQnWDQtRMW/jFL0zexslQvLklj/BP0P4qYkmhtlmZ93zquuHwrnt5w+nYH6XeI9jM65/kTMZbrlyJ7i5Yl0rsfnJnqeowvMjA6KLc21W6EvVYfzUjRNxshY2ZZFbPHSTL3nHbg9WOnjp8A8YeRJxOAQAA
+            labels:
+              coco: enabled
+            name: pod-missing-coco-as
+            namespace: default
+          spec:
+            containers:
+            - image: nginx:1.21.0
+              name: nginx
+      catch:
+      - description: Pod denied because aa.toml is missing [token_configs.coco_as]
+        podLogs:
+          name: pod-missing-coco-as
+          namespace: default
+
+  - name: step-06-mismatched-urls-denied
+    # all three url values must be identical; cdh.toml has a different url here
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            annotations:
+              io.katacontainers.config.hypervisor.cc_init_data: H4sIAAAAAAAAA4WQwWrDMAyG736K4EtOc5LCtlLYk5QQVEeNTRwrOPLavv3klsHayzA+SPo/88kQJkqe3VJ9VXpzsHv/0Oob0+YpllZrOtNqpY4jMPRKrxS8vZmEE2mZ13WtVrAzTFjJjTw8AmrEM+TAFYRAFwlyyqhKWmkAw7SEX/zINGMcLMWzn7ZevTSMJUsDyCCnUIwc83pomm73aVo53WHf7u+Gz9h8+hd56NjRPflsZGfkguXor4I1Kcfm/uwoC3oIb1Iw+Ci/1BS6EEVgPtleRViwwNYOUusXBWKHyeAVljWgrLb8UfkBQoVdYIsBAAA=
+            labels:
+              coco: enabled
+            name: pod-mismatched-urls
+            namespace: default
+          spec:
+            containers:
+            - image: nginx:1.21.0
+              name: nginx
+      catch:
+      - description: Pod denied because cdh.toml url differs from aa.toml urls
+        podLogs:
+          name: pod-mismatched-urls
+          namespace: default
+
+  - name: step-07-pod-without-coco-label-skipped
+
+    # Policy does not apply to pods without coco:enabled label
+    try:
+    - apply:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            annotations:
+              # invalid initdata — but policy should not trigger without coco label
+              io.katacontainers.config.hypervisor.cc_init_data: H4sIAAAAAAAAAytLLSrOzM9TsFVQMtAz1DNQ4krMSc8vyizJyAWJFWckGluYKHEBAG1J2VAnAAAA
+            name: pod-no-coco-label
+            namespace: default
+          spec:
+            containers:
+            - image: nginx:1.21.0
+              name: nginx
+    - assert:
+        resource:
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: pod-no-coco-label
+            namespace: default
+        timeout: 30s
